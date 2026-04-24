@@ -1,34 +1,16 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import Response
 from PIL import Image, ImageDraw, ImageFont, ImageOps
-import io, os, requests, textwrap
+import io, textwrap
 
 app = FastAPI()
 
-# --- SETUP DE FONTES (BYPASS DO GOOGLE) ---
-def download_font(url, filename):
-    if os.path.exists(filename) and os.path.getsize(filename) > 10000:
-        return
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        r = requests.get(url, headers=headers, timeout=15)
-        if r.status_code == 200:
-            open(filename, 'wb').write(r.content)
-    except:
-        pass
-
-# Buscando DIRETAMENTE da fonte original dos criadores, blindado contra as mudanças do Google.
-download_font("https://raw.githubusercontent.com/CatharsisFonts/Cormorant/master/1.%20TrueType%20Font%20Files/Cormorant%20Garamond/CormorantGaramond-Medium.ttf", "serif_v5.ttf")
-download_font("https://raw.githubusercontent.com/CatharsisFonts/Cormorant/master/1.%20TrueType%20Font%20Files/Cormorant%20Garamond/CormorantGaramond-MediumItalic.ttf", "serif_italic_v5.ttf")
-download_font("https://raw.githubusercontent.com/JulietaUla/Montserrat/master/fonts/ttf/Montserrat-Bold.ttf", "sans_bold_v5.ttf")
-download_font("https://raw.githubusercontent.com/JulietaUla/Montserrat/master/fonts/ttf/Montserrat-Light.ttf", "sans_light_v5.ttf")
-
-# --- HUB DE TEMPLATES ---
+# --- HUB DE TEMPLATES (Lendo direto do disco local) ---
 TEMPLATES = {
-    "gastronomia": {"gold": "#d4af72", "title_font": "serif_v5.ttf", "sub_font": "sans_light_v5.ttf", "v_center": 40, "v_edge": 180},
-    "diversao": {"gold": "#d9b87a", "title_font": "serif_v5.ttf", "sub_font": "sans_light_v5.ttf", "v_center": 30, "v_edge": 220},
-    "quizz": {"gold": "#ff4d4d", "title_font": "sans_bold_v5.ttf", "sub_font": "sans_light_v5.ttf", "v_center": 50, "v_edge": 200},
-    "sabia": {"gold": "#4db8ff", "title_font": "serif_italic_v5.ttf", "sub_font": "sans_light_v5.ttf", "v_center": 40, "v_edge": 190}
+    "gastronomia": {"gold": "#d4af72", "title_font": "CormorantGaramond-Medium.ttf", "sub_font": "Montserrat-Light.ttf", "v_center": 40, "v_edge": 180},
+    "diversao": {"gold": "#d9b87a", "title_font": "CormorantGaramond-Medium.ttf", "sub_font": "Montserrat-Light.ttf", "v_center": 30, "v_edge": 220},
+    "quizz": {"gold": "#ff4d4d", "title_font": "Montserrat-Bold.ttf", "sub_font": "Montserrat-Light.ttf", "v_center": 50, "v_edge": 200},
+    "sabia": {"gold": "#4db8ff", "title_font": "CormorantGaramond-MediumItalic.ttf", "sub_font": "Montserrat-Light.ttf", "v_center": 40, "v_edge": 190}
 }
 
 def draw_text_centered(draw, text, y, font, fill, max_chars=28):
@@ -54,6 +36,7 @@ async def render_slide(
     cfg = TEMPLATES.get(template_name, TEMPLATES["gastronomia"])
     
     img = Image.open(io.BytesIO(await file.read())).convert("RGB")
+    # Qualidade máxima de resampling ativada
     img = ImageOps.fit(img, (1080, 1350), method=Image.Resampling.LANCZOS)
     target_w, target_h = 1080, 1350
 
@@ -73,23 +56,16 @@ async def render_slide(
     
     badge_str = str(badge).upper() if badge and badge not in ["undefined", "null"] else ""
     
-    # Trava de Segurança Máxima: Se o Render bloquear as fontes, usa a básica mas NUNCA cai.
-    try:
-        f_badge = ImageFont.truetype("sans_light_v5.ttf", 22)
-    except:
-        f_badge = ImageFont.load_default()
+    # Carregando as fontes que você fez upload
+    f_badge = ImageFont.truetype("Montserrat-Light.ttf", 22)
+    f_title = ImageFont.truetype(cfg["title_font"], 80 if template_name != "quizz" else 95)
+    f_sub = ImageFont.truetype(cfg["sub_font"], 33)
+    f_capa = ImageFont.truetype("CormorantGaramond-MediumItalic.ttf", 105)
+    f_div = ImageFont.truetype("CormorantGaramond-Medium.ttf", 90)
 
     if badge_str:
         w = draw.textbbox((0,0), badge_str, font=f_badge)[2]
         draw.text(((1080 - w)/2, 60), badge_str, font=f_badge, fill="white")
-
-    try:
-        f_title = ImageFont.truetype(cfg["title_font"], 80 if template_name != "quizz" else 95)
-        f_sub = ImageFont.truetype(cfg["sub_font"], 33)
-        f_capa = ImageFont.truetype("serif_italic_v5.ttf", 105)
-        f_div = ImageFont.truetype("serif_v5.ttf", 90)
-    except:
-        f_title = f_sub = f_capa = f_div = ImageFont.load_default()
 
     if slide_num == 1:
         last_y = draw_text_centered(draw, title, 500, f_capa, "white")
@@ -97,7 +73,7 @@ async def render_slide(
     elif slide_num == 6:
         if template_name == "diversao":
             draw.rectangle([(0, 1050), (1080, 1350)], fill="#3d4038")
-            draw.text((390, 1180), "SALVA ESSE POST", font=f_badge, fill="white")
+            draw.text((390, 1180), "SALVA ESSE POST", font=f_badge, fill="white", spacing=4)
             draw_text_centered(draw, title, 780, f_div, "white")
         elif template_name == "quizz":
             draw.rectangle([(0, 1050), (1080, 1350)], fill=cfg["gold"])
