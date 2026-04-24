@@ -1,6 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import Response
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
 import io, os, requests, textwrap
 
 app = FastAPI()
@@ -25,51 +25,60 @@ TEMPLATES = {
 }
 
 def draw_text_centered(draw, text, y, font, fill, max_chars=28):
-    lines = textwrap.wrap(text, width=max_chars)
+    if not text or text in ["undefined", "null"]: return y # Trava de segurança
+    lines = textwrap.wrap(str(text), width=max_chars)
     current_y = y
+    line_height = draw.textbbox((0, 0), "A", font=font)[3] - draw.textbbox((0, 0), "A", font=font)[1]
     for line in lines:
         w = draw.textbbox((0, 0), line, font=font)[2]
         draw.text(((1080 - w) / 2, current_y), line, font=font, fill=fill)
-        current_y += font.size * 1.15
+        current_y += line_height * 1.2
     return current_y
 
 @app.post("/render-slide")
 async def render_slide(
     file: UploadFile = File(...),
-    badge: str = Form(...),
-    title: str = Form(...),
+    badge: str = Form(""),
+    title: str = Form(""),
     subtitle: str = Form(""),
     slide_num: int = Form(...),
     template_name: str = Form("gastronomia")
 ):
     cfg = TEMPLATES.get(template_name, TEMPLATES["gastronomia"])
+    
+    # Recorte Inteligente e Blindado (ImageOps)
     img = Image.open(io.BytesIO(await file.read())).convert("RGB")
+    img = ImageOps.fit(img, (1080, 1350), method=Image.Resampling.LANCZOS)
     target_w, target_h = 1080, 1350
-    img = img.resize((target_w, int(target_w * img.height / img.width)), Image.Resampling.LANCZOS)
-    img = img.crop((0, (img.height - target_h)//2, target_w, (img.height + target_h)//2))
 
     # Vinheta Dramática
     overlay = Image.new('RGBA', (target_w, target_h), (0,0,0,0))
     d = ImageDraw.Draw(overlay)
     for i in range(target_h):
-        alpha = int(cfg["v_edge"] * (1 - i/(target_h/4))) if i < target_h/4 else int(cfg["v_edge"] * ((i-3*target_h/4)/(target_h/4))) if i > 3*target_h/4 else cfg["v_center"]
+        if i < target_h/4: alpha = int(cfg["v_edge"] * (1 - i/(target_h/4)))
+        elif i > 3*target_h/4: alpha = int(cfg["v_edge"] * ((i-3*target_h/4)/(target_h/4)))
+        else: alpha = cfg["v_center"]
         d.line([(0, i), (target_w, i)], fill=(0,0,0,alpha))
     
     img = Image.alpha_composite(img.convert('RGBA'), overlay)
     draw = ImageDraw.Draw(img)
 
-    # Moldura (Exceto Slide 6 Diversão/Quizz)
+    # Moldura
     if not (slide_num == 6 and template_name in ["diversao", "quizz"]):
         draw.rectangle([(25, 25), (1055, 1325)], outline=cfg["gold"], width=2)
     
     # Badge
+    badge_str = str(badge).upper() if badge and badge not in ["undefined", "null"] else ""
     f_badge = ImageFont.truetype("sans_light.ttf", 22)
-    draw.text(((1080 - draw.textbbox((0,0), badge, font=f_badge)[2])/2, 60), badge.upper(), font=f_badge, fill="white")
+    if badge_str:
+        w = draw.textbbox((0,0), badge_str, font=f_badge)[2]
+        draw.text(((1080 - w)/2, 60), badge_str, font=f_badge, fill="white")
 
-    # Fonts e Render
+    # Fontes
     f_title = ImageFont.truetype(cfg["title_font"], 80 if template_name != "quizz" else 95)
     f_sub = ImageFont.truetype(cfg["sub_font"], 33)
 
+    # Renderização Condicional de Slides
     if slide_num == 1:
         f_capa = ImageFont.truetype("serif_italic.ttf", 105)
         last_y = draw_text_centered(draw, title, 500, f_capa, "white")
