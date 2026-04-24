@@ -5,29 +5,58 @@ import io, os, requests, textwrap
 
 app = FastAPI()
 
-# --- SETUP DE FONTES (URL DIRETA RAW + VALIDAÇÃO DE ERRO) ---
-def download_font(url, filename):
-    # Se o arquivo não existir ou for um HTML quebrado (< 10kb), baixa corretamente
-    if not os.path.exists(filename) or os.path.getsize(filename) < 10000:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        r = requests.get(url, headers=headers, allow_redirects=True)
-        if r.status_code == 200:
-            open(filename, 'wb').write(r.content)
-        else:
-            raise Exception(f"Falha Crítica: Não foi possível baixar a fonte de {url}. Status: {r.status_code}")
+# --- SETUP DE FONTES: SISTEMA DE REDUNDÂNCIA ANTI-FALHAS ---
+def download_font(urls, filename):
+    # Se já baixou e é um arquivo válido, segue a vida
+    if os.path.exists(filename) and os.path.getsize(filename) > 10000:
+        return
+    
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    
+    # Tenta cada link da lista até um dar certo (Código 200 OK)
+    for url in urls:
+        try:
+            r = requests.get(url, headers=headers, allow_redirects=True, timeout=10)
+            if r.status_code == 200 and len(r.content) > 10000:
+                with open(filename, 'wb') as f:
+                    f.write(r.content)
+                return # Fonte baixada com sucesso!
+        except:
+            continue
+            
+    raise Exception(f"Falha Crítica: Todas as URLs falharam para a fonte {filename}.")
 
-# Nomes v3 e Links Diretos (Raw) para evitar redirecionamentos HTML
-download_font("https://raw.githubusercontent.com/google/fonts/main/ofl/cormorantgaramond/CormorantGaramond-Medium.ttf", "serif_v3.ttf")
-download_font("https://raw.githubusercontent.com/google/fonts/main/ofl/cormorantgaramond/CormorantGaramond-MediumItalic.ttf", "serif_italic_v3.ttf")
-download_font("https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/static/Montserrat-Bold.ttf", "sans_bold_v3.ttf")
-download_font("https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/static/Montserrat-Light.ttf", "sans_light_v3.ttf")
+# Tentamos o caminho novo (static/), o caminho antigo, e uma fonte reserva de segurança
+download_font([
+    "https://raw.githubusercontent.com/google/fonts/main/ofl/cormorantgaramond/static/CormorantGaramond-Medium.ttf",
+    "https://raw.githubusercontent.com/google/fonts/main/ofl/cormorantgaramond/CormorantGaramond-Medium.ttf",
+    "https://raw.githubusercontent.com/google/fonts/main/ofl/lora/static/Lora-Medium.ttf"
+], "serif_v4.ttf")
+
+download_font([
+    "https://raw.githubusercontent.com/google/fonts/main/ofl/cormorantgaramond/static/CormorantGaramond-MediumItalic.ttf",
+    "https://raw.githubusercontent.com/google/fonts/main/ofl/cormorantgaramond/CormorantGaramond-MediumItalic.ttf",
+    "https://raw.githubusercontent.com/google/fonts/main/ofl/lora/static/Lora-Italic.ttf"
+], "serif_italic_v4.ttf")
+
+download_font([
+    "https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/static/Montserrat-Bold.ttf",
+    "https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/Montserrat-Bold.ttf",
+    "https://raw.githubusercontent.com/google/fonts/main/ofl/lato/Lato-Bold.ttf"
+], "sans_bold_v4.ttf")
+
+download_font([
+    "https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/static/Montserrat-Light.ttf",
+    "https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/Montserrat-Light.ttf",
+    "https://raw.githubusercontent.com/google/fonts/main/ofl/lato/Lato-Light.ttf"
+], "sans_light_v4.ttf")
 
 # --- HUB DE TEMPLATES ---
 TEMPLATES = {
-    "gastronomia": {"gold": "#d4af72", "title_font": "serif_v3.ttf", "sub_font": "sans_light_v3.ttf", "v_center": 40, "v_edge": 180},
-    "diversao": {"gold": "#d9b87a", "title_font": "serif_v3.ttf", "sub_font": "sans_light_v3.ttf", "v_center": 30, "v_edge": 220},
-    "quizz": {"gold": "#ff4d4d", "title_font": "sans_bold_v3.ttf", "sub_font": "sans_light_v3.ttf", "v_center": 50, "v_edge": 200},
-    "sabia": {"gold": "#4db8ff", "title_font": "serif_italic_v3.ttf", "sub_font": "sans_light_v3.ttf", "v_center": 40, "v_edge": 190}
+    "gastronomia": {"gold": "#d4af72", "title_font": "serif_v4.ttf", "sub_font": "sans_light_v4.ttf", "v_center": 40, "v_edge": 180},
+    "diversao": {"gold": "#d9b87a", "title_font": "serif_v4.ttf", "sub_font": "sans_light_v4.ttf", "v_center": 30, "v_edge": 220},
+    "quizz": {"gold": "#ff4d4d", "title_font": "sans_bold_v4.ttf", "sub_font": "sans_light_v4.ttf", "v_center": 50, "v_edge": 200},
+    "sabia": {"gold": "#4db8ff", "title_font": "serif_italic_v4.ttf", "sub_font": "sans_light_v4.ttf", "v_center": 40, "v_edge": 190}
 }
 
 def draw_text_centered(draw, text, y, font, fill, max_chars=28):
@@ -71,7 +100,7 @@ async def render_slide(
         draw.rectangle([(25, 25), (1055, 1325)], outline=cfg["gold"], width=2)
     
     badge_str = str(badge).upper() if badge and badge not in ["undefined", "null"] else ""
-    f_badge = ImageFont.truetype("sans_light_v3.ttf", 22)
+    f_badge = ImageFont.truetype("sans_light_v4.ttf", 22)
     if badge_str:
         w = draw.textbbox((0,0), badge_str, font=f_badge)[2]
         draw.text(((1080 - w)/2, 60), badge_str, font=f_badge, fill="white")
@@ -80,14 +109,14 @@ async def render_slide(
     f_sub = ImageFont.truetype(cfg["sub_font"], 33)
 
     if slide_num == 1:
-        f_capa = ImageFont.truetype("serif_italic_v3.ttf", 105)
+        f_capa = ImageFont.truetype("serif_italic_v4.ttf", 105)
         last_y = draw_text_centered(draw, title, 500, f_capa, "white")
         draw_text_centered(draw, subtitle, last_y + 40, f_sub, "white", max_chars=40)
     elif slide_num == 6:
         if template_name == "diversao":
             draw.rectangle([(0, 1050), (1080, 1350)], fill="#3d4038")
             draw.text((390, 1180), "SALVA ESSE POST", font=f_badge, fill="white")
-            draw_text_centered(draw, title, 780, ImageFont.truetype("serif_v3.ttf", 90), "white")
+            draw_text_centered(draw, title, 780, ImageFont.truetype("serif_v4.ttf", 90), "white")
         elif template_name == "quizz":
             draw.rectangle([(0, 1050), (1080, 1350)], fill=cfg["gold"])
             draw.text((390, 1180), "QUAL SEU PALPITE?", font=f_badge, fill="black")
