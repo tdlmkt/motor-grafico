@@ -5,27 +5,29 @@ import io, os, requests, textwrap
 
 app = FastAPI()
 
-# --- SETUP DE FONTES ---
+# --- SETUP DE FONTES (URLs e nomes corrigidos) ---
 def download_font(url, filename):
     if not os.path.exists(filename):
         r = requests.get(url, allow_redirects=True)
         open(filename, 'wb').write(r.content)
 
-download_font("https://github.com/google/fonts/raw/main/ofl/cormorantgaramond/CormorantGaramond-Medium.ttf", "serif.ttf")
-download_font("https://github.com/google/fonts/raw/main/ofl/cormorantgaramond/CormorantGaramond-MediumItalic.ttf", "serif_italic.ttf")
-download_font("https://github.com/google/fonts/raw/main/ofl/montserrat/Montserrat-Bold.ttf", "sans_bold.ttf")
-download_font("https://github.com/google/fonts/raw/main/ofl/montserrat/Montserrat-Light.ttf", "sans_light.ttf")
+# Nomes _v2 forçam o servidor a ignorar os arquivos corrompidos da memória
+download_font("https://github.com/google/fonts/raw/main/ofl/cormorantgaramond/CormorantGaramond-Medium.ttf", "serif_v2.ttf")
+download_font("https://github.com/google/fonts/raw/main/ofl/cormorantgaramond/CormorantGaramond-MediumItalic.ttf", "serif_italic_v2.ttf")
+# Links corrigidos (O Google moveu a Montserrat para a pasta 'static')
+download_font("https://github.com/google/fonts/raw/main/ofl/montserrat/static/Montserrat-Bold.ttf", "sans_bold_v2.ttf")
+download_font("https://github.com/google/fonts/raw/main/ofl/montserrat/static/Montserrat-Light.ttf", "sans_light_v2.ttf")
 
 # --- HUB DE TEMPLATES ---
 TEMPLATES = {
-    "gastronomia": {"gold": "#d4af72", "title_font": "serif.ttf", "sub_font": "sans_light.ttf", "v_center": 40, "v_edge": 180},
-    "diversao": {"gold": "#d9b87a", "title_font": "serif.ttf", "sub_font": "sans_light.ttf", "v_center": 30, "v_edge": 220},
-    "quizz": {"gold": "#ff4d4d", "title_font": "sans_bold.ttf", "sub_font": "sans_light.ttf", "v_center": 50, "v_edge": 200},
-    "sabia": {"gold": "#4db8ff", "title_font": "serif_italic.ttf", "sub_font": "sans_light.ttf", "v_center": 40, "v_edge": 190}
+    "gastronomia": {"gold": "#d4af72", "title_font": "serif_v2.ttf", "sub_font": "sans_light_v2.ttf", "v_center": 40, "v_edge": 180},
+    "diversao": {"gold": "#d9b87a", "title_font": "serif_v2.ttf", "sub_font": "sans_light_v2.ttf", "v_center": 30, "v_edge": 220},
+    "quizz": {"gold": "#ff4d4d", "title_font": "sans_bold_v2.ttf", "sub_font": "sans_light_v2.ttf", "v_center": 50, "v_edge": 200},
+    "sabia": {"gold": "#4db8ff", "title_font": "serif_italic_v2.ttf", "sub_font": "sans_light_v2.ttf", "v_center": 40, "v_edge": 190}
 }
 
 def draw_text_centered(draw, text, y, font, fill, max_chars=28):
-    if not text or text in ["undefined", "null"]: return y # Trava de segurança
+    if not text or text in ["undefined", "null"]: return y
     lines = textwrap.wrap(str(text), width=max_chars)
     current_y = y
     line_height = draw.textbbox((0, 0), "A", font=font)[3] - draw.textbbox((0, 0), "A", font=font)[1]
@@ -46,12 +48,10 @@ async def render_slide(
 ):
     cfg = TEMPLATES.get(template_name, TEMPLATES["gastronomia"])
     
-    # Recorte Inteligente e Blindado (ImageOps)
     img = Image.open(io.BytesIO(await file.read())).convert("RGB")
     img = ImageOps.fit(img, (1080, 1350), method=Image.Resampling.LANCZOS)
     target_w, target_h = 1080, 1350
 
-    # Vinheta Dramática
     overlay = Image.new('RGBA', (target_w, target_h), (0,0,0,0))
     d = ImageDraw.Draw(overlay)
     for i in range(target_h):
@@ -63,31 +63,27 @@ async def render_slide(
     img = Image.alpha_composite(img.convert('RGBA'), overlay)
     draw = ImageDraw.Draw(img)
 
-    # Moldura
     if not (slide_num == 6 and template_name in ["diversao", "quizz"]):
         draw.rectangle([(25, 25), (1055, 1325)], outline=cfg["gold"], width=2)
     
-    # Badge
     badge_str = str(badge).upper() if badge and badge not in ["undefined", "null"] else ""
-    f_badge = ImageFont.truetype("sans_light.ttf", 22)
+    f_badge = ImageFont.truetype("sans_light_v2.ttf", 22)
     if badge_str:
         w = draw.textbbox((0,0), badge_str, font=f_badge)[2]
         draw.text(((1080 - w)/2, 60), badge_str, font=f_badge, fill="white")
 
-    # Fontes
     f_title = ImageFont.truetype(cfg["title_font"], 80 if template_name != "quizz" else 95)
     f_sub = ImageFont.truetype(cfg["sub_font"], 33)
 
-    # Renderização Condicional de Slides
     if slide_num == 1:
-        f_capa = ImageFont.truetype("serif_italic.ttf", 105)
+        f_capa = ImageFont.truetype("serif_italic_v2.ttf", 105)
         last_y = draw_text_centered(draw, title, 500, f_capa, "white")
         draw_text_centered(draw, subtitle, last_y + 40, f_sub, "white", max_chars=40)
     elif slide_num == 6:
         if template_name == "diversao":
             draw.rectangle([(0, 1050), (1080, 1350)], fill="#3d4038")
             draw.text((390, 1180), "SALVA ESSE POST", font=f_badge, fill="white")
-            draw_text_centered(draw, title, 780, ImageFont.truetype("serif.ttf", 90), "white")
+            draw_text_centered(draw, title, 780, ImageFont.truetype("serif_v2.ttf", 90), "white")
         elif template_name == "quizz":
             draw.rectangle([(0, 1050), (1080, 1350)], fill=cfg["gold"])
             draw.text((390, 1180), "QUAL SEU PALPITE?", font=f_badge, fill="black")
@@ -100,7 +96,6 @@ async def render_slide(
         last_y = draw_text_centered(draw, title, 520, f_title, "white")
         draw_text_centered(draw, subtitle, last_y + 30, f_sub, "white", max_chars=40)
 
-    # Paginação
     if not (slide_num == 6 and template_name in ["diversao", "quizz"]):
         draw.text((500, 1270), f"{slide_num:02d} / 06", font=f_badge, fill=cfg["gold"])
 
